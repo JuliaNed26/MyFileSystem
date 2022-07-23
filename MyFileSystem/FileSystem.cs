@@ -1,79 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace MyFileSystem
 {
-    internal class FilesListRefreshedEventArgs:EventArgs
-    {
-        public readonly List<string> Files;
-        public readonly string Path;
-
-        public FilesListRefreshedEventArgs(List<string> files, string path)
-        {
-            Files = files;
-            Path = path;
-        }
-    }
     internal class FileSystem
     {
-        public string Path { get; private set; }
-        public List<string> Files { get; private set; }
-
-        public event EventHandler<FilesListRefreshedEventArgs> FilesListRefreshed;
-
-
         public FileSystem()
         {
             Path = "";
             FillFilesList(Path);
         }
-        protected virtual void OnFilesListRefreshed(FilesListRefreshedEventArgs e)
-        {
-            FilesListRefreshed?.Invoke(this, e);
-        }
 
-        private bool IsSystemOrHidden(string path)
-        {
-            FileAttributes fa = File.GetAttributes(path);
-            return (fa & (FileAttributes.System | FileAttributes.Hidden)) != 0;
-        }
+        public event EventHandler<FilesListRefreshedEventArgs> FilesListRefreshed;
 
-        private void FillFilesList(string _path)
-        {
-            if (_path == "" || _path == null)
-            {
-                Files = DriveInfo.GetDrives().Select(x => x.Name).ToList();
-            }
-            else
-            {
-                List<string> newFilesList = new List<string>();
-
-                foreach (var file in Directory.GetFiles(_path))
-                {
-                    if (!IsSystemOrHidden(file))
-                    {
-                        newFilesList.Add(file.Substring(file.LastIndexOf('\\') + 1));
-                    }
-                }
-
-                foreach (var directory in Directory.GetDirectories(_path))
-                {
-                    if (!IsSystemOrHidden(directory))
-                    {
-                        newFilesList.Add(directory.Substring(directory.LastIndexOf('\\') + 1));
-                    }
-                }
-
-
-                Files.Clear();
-                Files = newFilesList;
-            }
-            Path = _path == null ? "" : _path;
-            OnFilesListRefreshed(new FilesListRefreshedEventArgs(Files, Path));
-        }
+        public string Path { get; private set; }
+        public List<string> Files { get; private set; }
 
         public void ReturnToRootDir()
         {
@@ -87,14 +32,58 @@ namespace MyFileSystem
         {
             try
             {
-                FillFilesList(newPath);
+                if (IsDirectory(newPath))
+                {
+                    FillFilesList(newPath);
+                }
+                else
+                {
+                    Process.Start(new ProcessStartInfo(newPath) { UseShellExecute = true });//uses operating system shell for opening the files
+                }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 throw ex;
             }
         }
 
+        protected virtual void OnFilesListRefreshed(FilesListRefreshedEventArgs e) => FilesListRefreshed?.Invoke(this, e);
+        private bool IsSystemOrHidden (string path) => (File.GetAttributes(path) & (FileAttributes.System | FileAttributes.Hidden)) != 0;
 
+        private bool IsDirectory(string path) => (File.GetAttributes(path) & FileAttributes.Directory) != 0;
+
+        private void FillFilesList(string _path)
+        {
+
+            if (_path == "" || _path == null)
+            {
+                Files = DriveInfo.GetDrives().Select(x => x.Name).ToList();
+            }
+            else
+            {
+                Files = Directory.GetFiles(_path)
+                              .Where(file => !IsSystemOrHidden(file))
+                              .Select(file => file.Substring(file.LastIndexOf('\\') + 1))
+                              .ToList();
+
+                Files.AddRange(Directory.GetDirectories(_path)
+                                      .Where(directory => !IsSystemOrHidden(directory))
+                                      .Select(directory => directory.Substring(directory.LastIndexOf('\\') + 1)));
+            }
+
+            Path = _path == null ? "" : _path;
+            OnFilesListRefreshed(new FilesListRefreshedEventArgs(Files, Path));
+        }
+
+
+    }
+
+    internal class FilesListRefreshedEventArgs : EventArgs
+    {
+        public readonly List<string> Files;
+        public readonly string Path;
+
+        public FilesListRefreshedEventArgs(List<string> files, string path)
+            => (Files, Path) = (files, path);
     }
 }
