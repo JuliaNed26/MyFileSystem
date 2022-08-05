@@ -1,15 +1,17 @@
+using FileSystemLib;
+
 namespace MyFileSystem
 {
     public partial class Form1 : Form
     {
         FileSystem fileSystem;
-        FilesActions lastAction;
+        FileSystemObjectsState lastAction;
         List<string> filesToCutCopy;
         public Form1()
         {
             fileSystem = new FileSystem();
             filesToCutCopy = new List<string>();
-            fileSystem.FilesListRefreshed += PathChanged;
+            fileSystem.PathContentChanged += PathChanged;
             InitializeComponent();
             InitializeContMenuBtns();
             filesList.Items.AddRange(DriveInfo.GetDrives().Select(x => x.Name).ToArray());
@@ -23,6 +25,8 @@ namespace MyFileSystem
             pasteBtn = contextMenu.Items[3] as ToolStripMenuItem;
             deleteBtn = contextMenu.Items[4] as ToolStripMenuItem;
             renameBtn = contextMenu.Items[5] as ToolStripMenuItem;
+            createTxtFileBtn = (contextMenu.Items[6] as ToolStripMenuItem).DropDownItems[0];
+            createFolderBtn = (contextMenu.Items[6] as ToolStripMenuItem).DropDownItems[1]; ;
         }
         private void PathChanged(object? sender, FilesListRefreshedEventArgs e)
         {
@@ -43,8 +47,7 @@ namespace MyFileSystem
             {
                 try
                 {
-                    string rootDir = fileSystem.Path == "" ? fileSystem.Path : fileSystem.Path + '\\';
-                    fileSystem.GoToPath(rootDir + filesList.SelectedItems[0].ToString());
+                    fileSystem.GoToPath(Path.Combine(fileSystem.CurrentPath,filesList.SelectedItems[0].ToString()));
                 }
                 catch(IOException ex)
                 {
@@ -57,41 +60,44 @@ namespace MyFileSystem
         {
             foreach (var item in filesList.SelectedItems)
             {
-                filesToCutCopy.Add(fileSystem.Path + '\\' + item.ToString());
+                filesToCutCopy.Add(Path.Combine(fileSystem.CurrentPath, item.ToString()));
             }
         }
 
         private void copy_Clicked(object sender, EventArgs e)
         {
             RememberCutCopyFiles();
-            lastAction = FilesActions.Copied;
+            lastAction = FileSystemObjectsState.Copied;
         }
 
         private void cut_Clicked(object sender, EventArgs e)
         {
             RememberCutCopyFiles();
-            lastAction = FilesActions.Cut;
+            lastAction = FileSystemObjectsState.Cut;
         }
 
         private void paste_Clicked(object sender, EventArgs e)
         {
-            string destination = filesList.SelectedItems.Count == 0 ? currentPath.Text :
-                currentPath.Text + filesList.SelectedItems[0].ToString();
+            string destination = filesList.SelectedItems.Count == 0 ?
+                currentPath.Text : Path.Combine(currentPath.Text, filesList.SelectedItems[0].ToString());
 
-            bool shouldCopy = (lastAction & FilesActions.Copied) != 0;
+            bool shouldCut = (lastAction & FileSystemObjectsState.Cut) != 0;
 
             try
             {
-                OperationsWithFilesAndDirectories.RelocateMany(filesToCutCopy, destination, shouldCopy);
-
-                if (!shouldCopy)
+                if (shouldCut)
                 {
+                    FileSystemObject.MoveManyTo(filesToCutCopy, destination);
                     filesToCutCopy.Clear();
                 }
+                else
+                {
+                    FileSystemObject.CopyManyTo(filesToCutCopy, destination);
+                }
 
-                fileSystem.GoToPath(fileSystem.Path);
+                fileSystem.GoToPath(fileSystem.CurrentPath);
             }
-            catch(IOException ex)//access denied
+            catch(IOException ex)
             {
                 filesToCutCopy.Clear();
                 MessageBox.Show(ex.Message);
@@ -102,18 +108,18 @@ namespace MyFileSystem
         {
             foreach(var item in filesList.SelectedItems)
             {
-                OperationsWithFilesAndDirectories.Delete(currentPath.Text + '\\' + item.ToString());
+                FileSystemObject.Delete(Path.Combine(currentPath.Text, item.ToString()));
             }
 
-            fileSystem.GoToPath(fileSystem.Path);
+            fileSystem.GoToPath(fileSystem.CurrentPath);
         }
 
         private void properties_Clicked(object sender, EventArgs e)
         {
             string path = filesList.SelectedItems.Count == 0 ? currentPath.Text : 
-                currentPath.Text + (fileSystem.Path == "" ? "" : "\\") + filesList.SelectedItems[0].ToString();
+                Path.Combine(currentPath.Text, filesList.SelectedItems[0].ToString());
 
-            MessageBox.Show(OperationsWithFilesAndDirectories.GetProperties(path), "Properties");
+            MessageBox.Show(FileSystemObject.GetProperties(path), "Properties");
         }
 
         private void rename_Clicked(object? sender, EventArgs e)
@@ -130,29 +136,29 @@ namespace MyFileSystem
         {
             if(e.Button == MouseButtons.Right)
             {
-                if(fileSystem.Path == "" && filesList.SelectedItems.Count == 0)
+                if(fileSystem.CurrentPath == "")
                 {
                     for(int i = 0; i < contextMenu.Items.Count; i++)
                     {
                         contextMenu.Items[i].Enabled = false;
                     }
+
+                    if(filesList.SelectedItems.Count != 0)
+                    {
+                        propertiesBtn.Enabled = true;
+                    }
                 }
-                if(fileSystem.Path == "")
+                else if (filesList.SelectedItems.Count == 0)
                 {
-                    copyBtn.Enabled = false;
-                    pasteBtn.Enabled = false;
-                    cutBtn.Enabled = false;
-                    deleteBtn.Enabled = false;
                     renameBtn.Enabled = false;
+                    createTxtFileBtn.Enabled = true;
+                    createFolderBtn.Enabled = true;
                 }
-                if(filesList.SelectedItems.Count > 1)
+                else if (filesList.SelectedItems.Count > 1)
                 {
                     propertiesBtn.Enabled = false;
                     pasteBtn.Enabled = false;
-                }
-                if (filesList.SelectedItems.Count == 0)
-                {
-                    renameBtn.Enabled = false;
+                    createTxtFileBtn.Enabled = false;
                 }
 
                 contextMenu.Show(Cursor.Position.X, Cursor.Position.Y);
@@ -173,7 +179,8 @@ namespace MyFileSystem
             {
                 try
                 {
-                    OperationsWithFilesAndDirectories.Rename($"{currentPath.Text}\\{filesList.SelectedItems[0]}", renameTextBox.Text);
+                    FileSystemObject.Rename
+                        (Path.Combine(currentPath.Text, filesList.SelectedItems[0].ToString()), renameTextBox.Text);
                 }
                 catch (IOException ex)
                 {
@@ -182,7 +189,7 @@ namespace MyFileSystem
                 finally
                 {
                     renameTextBox.Hide();
-                    fileSystem.GoToPath(fileSystem.Path);
+                    fileSystem.GoToPath(fileSystem.CurrentPath);
                 }
             }
             renameTextBox.Hide();
@@ -193,6 +200,38 @@ namespace MyFileSystem
             if (e.KeyCode == Keys.Enter)
             {
                 renameTextBox_LostFocus(sender, e);
+            }
+        }
+
+        private void createTxtFile_Clicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                string newFileName = FileSystemObject.CreateTxtFileWithName(fileSystem.CurrentPath);
+                fileSystem.GoToPath(fileSystem.CurrentPath);
+                int indexOfCreatedFile = filesList.Items.IndexOf(newFileName);
+                filesList.SelectedItems.Add(filesList.Items[indexOfCreatedFile]);
+                rename_Clicked(sender, e);
+            }
+            catch(UnauthorizedAccessException ex)
+            {
+                MessageBox.Show("Can not create a file");
+            }
+        }
+
+        private void createFolder_Clicked(object? sender, EventArgs e)
+        {
+            try
+            {
+                string newFileName = FileSystemObject.CreateFolderWithName(fileSystem.CurrentPath);
+                fileSystem.GoToPath(fileSystem.CurrentPath);
+                int indexOfCreatedFile = filesList.Items.IndexOf(newFileName);
+                filesList.SelectedItems.Add(filesList.Items[indexOfCreatedFile]);
+                rename_Clicked(sender, e);
+            }
+            catch(UnauthorizedAccessException)
+            {
+                MessageBox.Show("Should allow admin rights");
             }
         }
     }

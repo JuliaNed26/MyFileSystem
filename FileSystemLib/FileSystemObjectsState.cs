@@ -4,10 +4,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace MyFileSystem
+namespace FileSystemLib
 {
     [Flags]
-    internal enum FilesActions
+    public enum FileSystemObjectsState
     {
         Copied = 1,
         Cut = 2

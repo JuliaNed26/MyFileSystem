@@ -34,6 +34,8 @@
         private ToolStripMenuItem pasteBtn;
         private ToolStripMenuItem deleteBtn;
         private ToolStripMenuItem renameBtn;
+        private ToolStripItem createTxtFileBtn;
+        private ToolStripItem createFolderBtn;
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
@@ -83,6 +85,9 @@
             this.contextMenu.Items.Add("Paste", null, paste_Clicked);
             this.contextMenu.Items.Add("Delete", null, delete_Clicked);
             this.contextMenu.Items.Add("Rename", null, rename_Clicked);
+            this.contextMenu.Items.Add("Create");
+            (this.contextMenu.Items[6] as ToolStripMenuItem).DropDownItems.Add("New .txt file", null, createTxtFile_Clicked);
+            (this.contextMenu.Items[6] as ToolStripMenuItem).DropDownItems.Add("New folder", null, createFolder_Clicked);
             this.contextMenu.Closed += new System.Windows.Forms.ToolStripDropDownClosedEventHandler(this.contextMenu_Closed);
             // 
             // renameTextBox

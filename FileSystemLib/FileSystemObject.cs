@@ -4,39 +4,51 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace MyFileSystem
+namespace FileSystemLib
 {
-    internal static class OperationsWithFilesAndDirectories
+    public static class FileSystemObject
     {
-        public static void RelocateMany(List<string> pathsToRelocate, string destination, bool move)
+        public static bool IsDirectory(string path) => (File.GetAttributes(path) & FileAttributes.Directory) != 0;
+
+        public static void MoveManyTo(List<string> pathsOfObjectsToMove, string destination)
         {
+
             if (Directory.Exists(destination))
             {
-                foreach (string path in pathsToRelocate)
+                foreach (string path in pathsOfObjectsToMove)
                 {
-                    if (File.Exists(path))
+                    if (IsDirectory(path))
                     {
-                        if (move)
-                        {
-                            File.Move(path, $"{destination}\\{Path.GetFileName(path)}");
-                        }
-                        else
-                        {
-                            File.Copy(path, $"{destination}\\{Path.GetFileName(path)}");
-                        }
+                        Directory.Move(path, Path.Combine(destination, (new DirectoryInfo(path)).Name));
                     }
 
-                    if (Directory.Exists(path))
+                    else
                     {
-                        if (move)
-                        {
-                            string s = $"{destination}\\{path.Substring(path.LastIndexOf('\\') + 1)}";
-                            Directory.Move(path, $"{destination}\\{path.Substring(path.LastIndexOf('\\'))}");
-                        }
-                        else
-                        {
-                            CopyDir(path, destination);
-                        }
+                        File.Move(path, Path.Combine(destination, Path.GetFileName(path)));
+                    }
+                }
+            }
+            else
+            {
+                throw new DirectoryNotFoundException($"Directory {destination} wasn't found");
+            }
+        }
+
+        public static void CopyManyTo(List<string> pathsOfObjectsToCopy, string destination)
+        {
+
+            if (Directory.Exists(destination))
+            {
+                foreach (string path in pathsOfObjectsToCopy)
+                {
+                    if (IsDirectory(path))
+                    {
+                        CopyDir(path, destination);
+                    }
+
+                    else
+                    {
+                        File.Copy(path, Path.Combine(destination, Path.GetFileName(path)));
                     }
                 }
             }
@@ -47,24 +59,25 @@ namespace MyFileSystem
 
             static void CopyDir(string dirPath, string destination)
             {
-                destination += '\\' + (new DirectoryInfo(dirPath)).Name;
+                destination = Path.Combine(destination, (new DirectoryInfo(dirPath)).Name);
                 Directory.CreateDirectory(destination);
                 List<string> allFiles = Directory.GetFiles(dirPath).ToList();
                 allFiles.AddRange(Directory.GetDirectories(dirPath).ToList());
-                RelocateMany(allFiles, destination, false);
+                CopyManyTo(allFiles, destination);
             }
         }
 
         public static void Delete(string path)
         {
-            if(File.Exists(path) && 
-              ((new FileInfo(path)).Attributes & FileAttributes.System) == 0)
+            var IsSystemDirectory = (string path) => ((new DirectoryInfo(path)).Attributes & FileAttributes.System) != 0;
+            var IsSystemFile = (string path) => ((new FileInfo(path)).Attributes & FileAttributes.System) != 0;
+
+            if (File.Exists(path) && !IsSystemFile(path))
             {
                 File.Delete(path);
             }
 
-            if(Directory.Exists(path) &&
-               ((new DirectoryInfo(path)).Attributes & FileAttributes.System) == 0)
+            if(Directory.Exists(path) && !IsSystemDirectory(path))
             {
                 Directory.Delete(path, true);
             }
@@ -72,26 +85,29 @@ namespace MyFileSystem
 
         public static string GetProperties(string path)
         {
-            if(File.Exists(path))
+            if (IsDirectory(path))
+            {
+                if ((new DirectoryInfo(path)).Parent == null)//drive
+                {
+                    return GetDriveProperties(path);
+                }
+                return GetDirectoryProperties(path);
+            }
+
+            else
             {
                 return GetFileProperties(path);
             }
 
-            if(path.Length == 3)//drive
-            {
-                return GetDriveProperties(path);
-            }
-
-            if(Directory.Exists(path))
-            {
-                return GetDirectoryProperties(path);
-            }
-
-            throw new FileNotFoundException();
-
             static string GetDriveProperties(string drive)
             {
                 DriveInfo driveInfo = DriveInfo.GetDrives().Where(d => d.Name == drive).FirstOrDefault();
+
+                if(driveInfo == null)
+                {
+                    throw new DriveNotFoundException();
+                }
+
                 StringBuilder propertiesMessage = new StringBuilder();
                 if (driveInfo.IsReady)
                 {
@@ -181,24 +197,53 @@ namespace MyFileSystem
 
         public static void Rename(string path, string newName)
         {
-            if (File.Exists(path))
+            if (newName != null && newName != "")
             {
-                FileInfo fileInfo = new FileInfo(path);
-                File.Move(path, 
-                    fileInfo.Directory.FullName + '\\' + newName + (newName.Contains(fileInfo.Extension) ? "" : fileInfo.Extension));
+                if (IsDirectory(path) && newName != (new DirectoryInfo(path)).Name)
+                {
+                    DirectoryInfo dirInfo = new DirectoryInfo(path);
+                    string newDirectoryPath = Path.Combine(dirInfo.Parent.ToString(), newName);
+                    Directory.CreateDirectory(newDirectoryPath);
+                    List<string> dirContent = dirInfo.GetDirectories()
+                                                 .Select(directory => directory.FullName)
+                                                 .ToList();
+                    dirContent.AddRange(dirInfo.GetFiles().Select(file => file.FullName));
+                    MoveManyTo(dirContent, newDirectoryPath);
+                    Delete(path);
+                }
+                if (File.Exists(path))
+                {
+                    FileInfo fileInfo = new FileInfo(path);
+                    File.Move(path,
+                        Path.Combine(fileInfo.Directory.FullName, newName + (newName.Contains(fileInfo.Extension) ? "" : fileInfo.Extension)),
+                        false);
+                }
             }
-            if (Directory.Exists(path))
-            {
-                DirectoryInfo dirInfo = new DirectoryInfo(path);
-                string newDirectoryPath = $"{dirInfo.Parent}\\{newName}";
-                Directory.CreateDirectory(newDirectoryPath);
-                List<string> dirConsistance = dirInfo.GetDirectories()
-                                             .Select(directory => directory.FullName)
-                                             .ToList();
-                dirConsistance.AddRange(dirInfo.GetFiles().Select(file => file.FullName));
-                RelocateMany(dirConsistance, newDirectoryPath, true);
-                Delete(path);
-            }
+        }
+
+        public static string CreateTxtFileWithName(string destinationPath)
+        {
+            DirectoryInfo di = new DirectoryInfo(destinationPath);
+            int countOfNewTxtFiles = di.EnumerateFiles()
+                                    .Where(file => file.Extension == ".txt" && file.Name.Contains("New Text Document"))
+                                    .Count();
+            string prefixToName = countOfNewTxtFiles == 0 ? ".txt" : $"({countOfNewTxtFiles}).txt";
+            string newName = "New Text Document" + prefixToName;
+            FileInfo newFileInfo = new FileInfo(Path.Combine(destinationPath, newName));
+            using FileStream fs = newFileInfo.Create();
+            return newName;
+        }
+
+        public static string CreateFolderWithName(string destinationPath)
+        {
+            DirectoryInfo di = new DirectoryInfo(destinationPath);
+            int countOfNewFolders = di.EnumerateDirectories()
+                                    .Where(directory => directory.Name.Contains("New Folder"))
+                                    .Count();
+            string prefixToName = countOfNewFolders == 0 ? "" : $"({countOfNewFolders})";
+            string newName = "New Folder" + prefixToName;
+            Directory.CreateDirectory(Path.Combine(destinationPath, newName));
+            return newName;
         }
     }
 }
