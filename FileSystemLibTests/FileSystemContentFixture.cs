@@ -1,44 +1,60 @@
 using System.IO.Abstractions;
+using Moq;
 
 namespace FileSystemLibTests
 {
     public class FileSystemContentFixture
-    {
-        FileSystemContent testFileSystem = new FileSystemContent(new FileSystem());
-        private FileSystemActions fileSystemActions = new FileSystemActions(new FileSystem());
-        List<string> drives;
+    { 
+        private Mock<FileSystem> testFileSystem;
+        private FileSystemContent fileSystemContent;
+        private FileSystemActions fileSystemActions;
+        private List<string> drives;
 
         [OneTimeSetUp]
-        public void FillDriveNames()
+        public void FillDrives()
         {
             drives = DriveInfo.GetDrives().Select(x => x.Name).ToList();
+        }
+
+        [SetUp]
+        public void FillFileSystemClasses()
+        {
+            testFileSystem = new Mock<FileSystem>() { CallBase = true };
+            fileSystemContent = new FileSystemContent(testFileSystem.Object);
+            fileSystemActions = new FileSystemActions(testFileSystem.Object);
         }
 
         [Test]
         public void LibCreated_PathShouldBeEmpty_PathContentShouldBeDrivesName()
         {
-            testFileSystem = new FileSystemContent(new FileSystem());
-            Assert.That(testFileSystem.CurrentPath, Is.EqualTo(""));
-            CollectionAssert.AreEquivalent(testFileSystem.PathContent, drives);
+            testFileSystem.CallBase = false;
+            fileSystemContent = new FileSystemContent(testFileSystem.Object);
+            Assert.That(fileSystemContent.CurrentPath, Is.EqualTo(""));
+            CollectionAssert.AreEquivalent(fileSystemContent.PathContent, drives);
         }
 
         [Test]
         public void GoToPath_GoToNonExistingFile_ShouldThrowFileNotFoundException()
         {
-            Assert.Throws<FileNotFoundException>(() => testFileSystem.GoToPath(Path.Combine(drives[0],"nonExistent")));
-            Assert.Throws<FileNotFoundException>(() => testFileSystem.GoToPath(Path.Combine(drives[0], "nonExistent.txt")));
+            var notExistingDirPath = Path.Combine(drives[0], "nonExistent");
+            var notExistingFilePath = Path.Combine(drives[0], "nonExistent.txt");
+            testFileSystem.CallBase = false;
+            testFileSystem.Setup(fs => fs.File.GetAttributes(notExistingDirPath)).Throws<FileNotFoundException>();
+            testFileSystem.Setup(fs => fs.File.GetAttributes(notExistingFilePath)).Throws<FileNotFoundException>();
+            Assert.Throws<FileNotFoundException>(() => fileSystemContent.GoToPath(notExistingDirPath));
+            Assert.Throws<FileNotFoundException>(() => fileSystemContent.GoToPath(notExistingFilePath));
         }
 
         [Test]
         public void GoToPath_GoToExistingDirectory_PathAndPathContentShouldBeChanged()
         {
-            List<string> prevPathContent = testFileSystem.PathContent;
+            List<string> prevPathContent = fileSystemContent.PathContent;
             string pathOfADirectory = Directory.GetDirectories(drives[0])
                                       .Where(dir => !(new DirectoryInfo(dir)).IsSystemOrHidden())
                                       .FirstOrDefault();
-            testFileSystem.GoToPath(pathOfADirectory);
-            Assert.That(testFileSystem.CurrentPath, Is.EqualTo(pathOfADirectory));
-            CollectionAssert.AreNotEquivalent(prevPathContent, testFileSystem.PathContent);
+            fileSystemContent.GoToPath(pathOfADirectory);
+            Assert.That(fileSystemContent.CurrentPath, Is.EqualTo(pathOfADirectory));
+            CollectionAssert.AreNotEquivalent(prevPathContent, fileSystemContent.PathContent);
         }
 
         //go to file
@@ -46,55 +62,58 @@ namespace FileSystemLibTests
         [Test]
         public void GoToPath_PathIsEmptyLine_ShouldThrowArgumentException()
         {
-            Assert.Throws<ArgumentException>(() => testFileSystem.GoToPath(""));
+            testFileSystem.CallBase = false;
+            testFileSystem.Setup(fs => fs.File.GetAttributes("")).Throws<ArgumentException>();
+            Assert.Throws<ArgumentException>(() => fileSystemContent.GoToPath(""));
+            testFileSystem.Verify(fs=> fs.File.GetAttributes(""),Times.Exactly(1));
         }
 
         [Test]
         public void ReturnToRootDir_ReturnFromDrive_PathContentShouldContainListOfDrives_PathShouldBeEmpty()
         {
-            testFileSystem.GoToPath(drives[0]);
-            testFileSystem.ReturnToRootDir();
-            Assert.That(testFileSystem.CurrentPath, Is.EqualTo(""));
-            CollectionAssert.AreEquivalent(testFileSystem.PathContent, drives);
+            fileSystemContent.GoToPath(drives[0]);
+            fileSystemContent.ReturnToRootDir();
+            Assert.That(fileSystemContent.CurrentPath, Is.EqualTo(""));
+            CollectionAssert.AreEquivalent(fileSystemContent.PathContent, drives);
         }
 
         [Test]
         public void ReturnToRootDir_ReturnFromListOfDrives_PathContentShouldContainListOfDrives_PathShouldBeEmpty()
         {
-            testFileSystem.ReturnToRootDir(); 
-            Assert.That(testFileSystem.CurrentPath, Is.EqualTo(""));
-            CollectionAssert.AreEquivalent(testFileSystem.PathContent, drives);
+            fileSystemContent.ReturnToRootDir(); 
+            Assert.That(fileSystemContent.CurrentPath, Is.EqualTo(""));
+            CollectionAssert.AreEquivalent(fileSystemContent.PathContent, drives);
         }
 
         [Test]
         public void ReturnToRootDir_ReturnFromTheDirectoryToParent_PathShouldChangeToParent_PathContentShouldBeChanged()
         {
-            testFileSystem.GoToPath(drives[0]);
+            fileSystemContent.GoToPath(drives[0]);
 
             string directoryToOpen = "";
 
             for (int i = 0; i < 2; i++)
             {
 
-                directoryToOpen = Path.Combine(testFileSystem.CurrentPath,
-                                         testFileSystem.PathContent
+                directoryToOpen = Path.Combine(fileSystemContent.CurrentPath,
+                                         fileSystemContent.PathContent
                                         .Where(item =>
                                         {
-                                            string itemPath = Path.Combine(testFileSystem.CurrentPath, item);
+                                            string itemPath = Path.Combine(fileSystemContent.CurrentPath, item);
                                             return fileSystemActions.IsDirectory(itemPath) &&
                                                  (new DirectoryInfo(itemPath)).GetDirectories()
                                                  .Where(dir => !dir.IsSystemOrHidden()).Any();
                                         }).FirstOrDefault());
-                testFileSystem.GoToPath(directoryToOpen);
+                fileSystemContent.GoToPath(directoryToOpen);
             }
 
 
-            List<string> prevPathContent = testFileSystem.PathContent;
+            List<string> prevPathContent = fileSystemContent.PathContent;
 
-            testFileSystem.ReturnToRootDir();
+            fileSystemContent.ReturnToRootDir();
             DirectoryInfo rootDir = (new DirectoryInfo(directoryToOpen)).Parent;
-            Assert.That(testFileSystem.CurrentPath, Is.EqualTo(rootDir.FullName));
-            CollectionAssert.AreNotEquivalent(testFileSystem.PathContent, prevPathContent);
+            Assert.That(fileSystemContent.CurrentPath, Is.EqualTo(rootDir.FullName));
+            CollectionAssert.AreNotEquivalent(fileSystemContent.PathContent, prevPathContent);
         }
     }
 }

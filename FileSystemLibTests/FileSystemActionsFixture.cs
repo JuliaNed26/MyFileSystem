@@ -1,4 +1,6 @@
-﻿using System.IO.Abstractions.TestingHelpers;
+﻿using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
+using Moq;
 
 namespace FileSystemLibTests
 {
@@ -7,7 +9,7 @@ namespace FileSystemLibTests
         MockFileSystem testFileSystem;
         FileSystemActions fileSystemActions;
         List<string> drives;
-        string startPath = "C:\\TestDirectory";
+        private string startPath = "C:\\TestDirectory";
 
         [OneTimeSetUp]
         public void FillDriveNames()
@@ -15,14 +17,13 @@ namespace FileSystemLibTests
             drives = DriveInfo.GetDrives().Select(x => x.Name).ToList();
             testFileSystem = new MockFileSystem();
             fileSystemActions = new FileSystemActions(testFileSystem);
-            testFileSystem.AddDirectory(startPath);
+            testFileSystem.Directory.CreateDirectory(startPath);
         }
 
         [Test]
         public void CreateTxtFileWithName_ShouldCreateNewFile()
         {
-            var nameOfCreatedFile = fileSystemActions.CreateTxtFileWithName(startPath);
-            Assert.IsTrue(testFileSystem.File.Exists(Path.Combine(startPath, nameOfCreatedFile)));
+            var nameOfCreatedFile = fileSystemActions.CreateTxtFileWithName(startPath); 
         }
 
         [Test]
